@@ -14,21 +14,28 @@ Then activate **Pickaxe Embed SSO** in WordPress admin.
 
 ## Configure
 
-Open **Settings -> Pickaxe Embed SSO** and set:
+Open **Settings -> Pickaxe Embed SSO** and click **Generate WordPress SSO Config**.
 
-- Customer ID
-- Issuer
+That fills most fields automatically:
+
+- Issuer, from the WordPress site URL
 - Audience, usually `pickaxe-embed`
 - Key ID
 - ES256 private key PEM
 - Embed service origin
 - Embed script URL
+- Auth provider label
+
+Then set:
+
+- Default deployment ID, for example `deployment-your-id`
 
 For production, prefer defining secrets in `wp-config.php` so the private key is not stored in the
 database:
 
 ```php
 define('PICKAXE_SSO_CUSTOMER_ID', 'acme-nextauth-demo');
+define('PICKAXE_SSO_DEFAULT_DEPLOYMENT_ID', 'deployment-your-id');
 define('PICKAXE_SSO_ISSUER', 'https://example.com');
 define('PICKAXE_SSO_AUDIENCE', 'pickaxe-embed');
 define('PICKAXE_SSO_KEY_ID', 'acme-key-2026-04');
@@ -49,12 +56,16 @@ define('PICKAXE_SSO_TOKEN_TTL_SECONDS', 60);
 Add this shortcode to a page:
 
 ```text
+[pickaxe_embed]
+```
+
+The shortcode uses the default deployment ID from settings. You can still override it per page:
+
+```text
 [pickaxe_embed deployment_id="deployment-your-id"]
 ```
 
-Use the same `deployment-...` ID from the normal Pickaxe embed snippet. The shortcode loads the
-configured embed script and, for logged-in WordPress users, provides a nonce-authenticated JWT
-callback. Logged-out visitors do not receive an SSO token.
+Use the same `deployment-...` ID from the normal Pickaxe embed snippet. The shortcode loads the configured embed script and, for logged-in WordPress users, provides a nonce-authenticated JWT callback. Logged-out visitors do not receive an SSO token.
 
 ## Token Endpoint
 

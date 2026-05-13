@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pickaxe Embed SSO
  * Description: Signs short-lived Pickaxe embed SSO tokens for logged-in WordPress users.
- * Version: 0.1.2
+ * Version: 0.2.0
  * Author: Pickaxe
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -27,6 +27,7 @@ final class Pickaxe_Embed_SSO {
         add_action('rest_api_init', [__CLASS__, 'register_rest_routes']);
         add_action('admin_menu', [__CLASS__, 'register_settings_page']);
         add_action('admin_init', [__CLASS__, 'register_settings']);
+        add_action('admin_post_pickaxe_embed_sso_generate_config', [__CLASS__, 'handle_generate_config']);
         add_shortcode('pickaxe_embed', [__CLASS__, 'render_embed_shortcode']);
     }
 
@@ -100,10 +101,10 @@ final class Pickaxe_Embed_SSO {
             'pickaxe_embed'
         );
 
-        $target_id = sanitize_html_class($atts['deployment_id'] ?: $atts['target_id']);
+        $target_id = sanitize_html_class($atts['deployment_id'] ?: $atts['target_id'] ?: $settings['default_deployment_id']);
         if (!$target_id) {
             if (current_user_can('manage_options')) {
-                return '<div class="pickaxe-embed-sso-error">Pickaxe Embed SSO is missing a deployment ID. Use <code>[pickaxe_embed deployment_id="deployment-your-id"]</code>.</div>';
+                return '<div class="pickaxe-embed-sso-error">Pickaxe Embed SSO is missing a deployment ID. Add one in Settings -> Pickaxe Embed SSO, or use <code>[pickaxe_embed deployment_id="deployment-your-id"]</code>.</div>';
             }
 
             return '';
@@ -170,6 +171,42 @@ final class Pickaxe_Embed_SSO {
         }
     }
 
+    public static function handle_generate_config(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die('You do not have permission to manage Pickaxe Embed SSO.');
+        }
+
+        check_admin_referer('pickaxe_embed_sso_generate_config');
+
+        $settings = self::get_settings();
+        $site_origin = self::site_origin();
+        $site_host = (string) wp_parse_url($site_origin, PHP_URL_HOST);
+        $key_pair = self::generate_es256_key_pair();
+
+        $settings['customer_id'] = $settings['customer_id'] ?: sanitize_title($site_host ?: get_bloginfo('name'));
+        $settings['issuer'] = $settings['issuer'] ?: $site_origin;
+        $settings['audience'] = $settings['audience'] ?: self::DEFAULT_AUDIENCE;
+        $settings['key_id'] = 'wordpress-sso-key-' . substr(str_replace('-', '', wp_generate_uuid4()), 0, 16);
+        $settings['private_key_pem'] = $key_pair['privateKey'];
+        $settings['embed_service_origin'] = $settings['embed_service_origin'] ?: 'https://embed.pickaxe.co';
+        $settings['embed_script_url'] = $settings['embed_script_url'] ?: 'https://studio.pickaxe.co/api/embed/bundle.js';
+        $settings['auth_provider'] = $settings['auth_provider'] ?: self::DEFAULT_AUTH_PROVIDER;
+        $settings['token_ttl_seconds'] = (string) ($settings['token_ttl_seconds'] ?: self::DEFAULT_TOKEN_TTL_SECONDS);
+
+        update_option(self::OPTION_NAME, $settings);
+
+        wp_safe_redirect(
+            add_query_arg(
+                [
+                    'page' => 'pickaxe-embed-sso',
+                    'pickaxe_generated' => '1',
+                ],
+                admin_url('options-general.php')
+            )
+        );
+        exit;
+    }
+
     public static function sanitize_settings(array $input): array {
         $output = [];
 
@@ -228,14 +265,58 @@ final class Pickaxe_Embed_SSO {
 
         echo '<div class="wrap">';
         echo '<h1>Pickaxe Embed SSO</h1>';
+        self::render_setup_wizard();
         echo '<form action="options.php" method="post">';
         settings_fields('pickaxe_embed_sso');
         do_settings_sections('pickaxe-embed-sso');
         submit_button();
         echo '</form>';
+        self::render_pickaxe_config_summary();
         echo '<h2>Usage</h2>';
-        echo '<p>Add <code>[pickaxe_embed deployment_id="deployment-your-id"]</code> to a page. The deployment ID must be the same <code>deployment-...</code> ID used by the Pickaxe embed. Logged-out visitors will see the normal embed login path. Logged-in visitors receive a short-lived signed SSO token.</p>';
+        echo '<p>Add <code>[pickaxe_embed]</code> to a page after setting a default deployment ID. You can also override per page with <code>[pickaxe_embed deployment_id="deployment-your-id"]</code>.</p>';
         echo '</div>';
+    }
+
+    private static function render_setup_wizard(): void {
+        if (isset($_GET['pickaxe_generated']) && '1' === $_GET['pickaxe_generated']) {
+            echo '<div class="notice notice-success"><p>Pickaxe SSO config generated. Add your deployment ID, save settings, then copy the Pickaxe-side config below.</p></div>';
+        }
+
+        echo '<div class="card" style="max-width: 900px;">';
+        echo '<h2>Fast setup</h2>';
+        echo '<p>Generate the WordPress-side SSO values automatically. This creates a local ES256 key pair, stores the private key in WordPress, and shows the public key to copy into Pickaxe.</p>';
+        echo '<form action="' . esc_url(admin_url('admin-post.php')) . '" method="post">';
+        echo '<input type="hidden" name="action" value="pickaxe_embed_sso_generate_config" />';
+        wp_nonce_field('pickaxe_embed_sso_generate_config');
+        submit_button('Generate WordPress SSO Config', 'secondary', 'submit', false);
+        echo '</form>';
+        echo '</div>';
+    }
+
+    private static function render_pickaxe_config_summary(): void {
+        $settings = self::get_settings();
+        $public_key = self::get_public_key_from_private_key($settings['private_key_pem']);
+        $site_origin = self::site_origin();
+        $deployment_id = $settings['default_deployment_id'] ?: 'deployment-your-id';
+
+        echo '<h2>Copy into Pickaxe</h2>';
+        echo '<p>Use these values in the Pickaxe workspace SSO settings for the deployment workspace.</p>';
+        echo '<textarea class="large-text code" rows="14" readonly>';
+        echo esc_textarea(
+            "enabled: true\n"
+            . "issuer: {$settings['issuer']}\n"
+            . "audience: {$settings['audience']}\n"
+            . "key_id: {$settings['key_id']}\n"
+            . "allowed_origins:\n"
+            . "  - {$site_origin}\n"
+            . "\n"
+            . "public_key:\n"
+            . ($public_key ?: "  Generate config first, then save settings.\n")
+            . "\n"
+            . "shortcode:\n"
+            . "[pickaxe_embed deployment_id=\"{$deployment_id}\"]\n"
+        );
+        echo '</textarea>';
     }
 
     private static function settings_fields(): array {
@@ -244,6 +325,13 @@ final class Pickaxe_Embed_SSO {
                 'label' => 'Customer ID',
                 'type' => 'text',
                 'constant' => 'PICKAXE_SSO_CUSTOMER_ID',
+                'description' => 'Optional compatibility claim. Current Pickaxe exchange does not use this for lookup.',
+            ],
+            'default_deployment_id' => [
+                'label' => 'Default deployment ID',
+                'type' => 'text',
+                'constant' => 'PICKAXE_SSO_DEFAULT_DEPLOYMENT_ID',
+                'description' => 'Example: deployment-abc123. Lets pages use [pickaxe_embed] without shortcode attributes.',
             ],
             'issuer' => [
                 'label' => 'Issuer',
@@ -318,7 +406,7 @@ final class Pickaxe_Embed_SSO {
     }
 
     private static function missing_required_settings(array $settings): array {
-        $required = ['customer_id', 'issuer', 'audience', 'key_id', 'private_key_pem'];
+        $required = ['issuer', 'audience', 'key_id', 'private_key_pem'];
 
         return array_values(
             array_filter(
@@ -425,6 +513,59 @@ final class Pickaxe_Embed_SSO {
         }
 
         return self::ecdsa_der_to_raw($der_signature, 32);
+    }
+
+    private static function generate_es256_key_pair(): array {
+        $key = openssl_pkey_new(
+            [
+                'private_key_type' => OPENSSL_KEYTYPE_EC,
+                'curve_name' => 'prime256v1',
+            ]
+        );
+
+        if (!$key) {
+            throw new RuntimeException('OpenSSL could not generate an ES256 key pair.');
+        }
+
+        openssl_pkey_export($key, $private_key);
+        $details = openssl_pkey_get_details($key);
+
+        if (empty($private_key) || empty($details['key'])) {
+            throw new RuntimeException('OpenSSL generated an incomplete ES256 key pair.');
+        }
+
+        return [
+            'privateKey' => $private_key,
+            'publicKey' => $details['key'],
+        ];
+    }
+
+    private static function get_public_key_from_private_key(string $private_key_pem): string {
+        if (!$private_key_pem) {
+            return '';
+        }
+
+        $private_key = openssl_pkey_get_private($private_key_pem);
+        if (!$private_key) {
+            return '';
+        }
+
+        $details = openssl_pkey_get_details($private_key);
+
+        return isset($details['key']) ? (string) $details['key'] : '';
+    }
+
+    private static function site_origin(): string {
+        $home_url = home_url();
+        $scheme = (string) wp_parse_url($home_url, PHP_URL_SCHEME);
+        $host = (string) wp_parse_url($home_url, PHP_URL_HOST);
+        $port = wp_parse_url($home_url, PHP_URL_PORT);
+
+        if (!$scheme || !$host) {
+            return rtrim($home_url, '/');
+        }
+
+        return $scheme . '://' . $host . ($port ? ':' . $port : '');
     }
 
     private static function ecdsa_der_to_raw(string $der_signature, int $part_length): string {

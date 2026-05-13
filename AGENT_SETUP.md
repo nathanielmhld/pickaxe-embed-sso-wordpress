@@ -35,24 +35,23 @@ pickaxe-embed-sso.zip
 
 ## WordPress Plugin Settings
 
-Configure these values in the plugin settings page:
+Click **Generate WordPress SSO Config** in the plugin settings page. This creates the WordPress-side
+ES256 key pair and fills most settings automatically.
+
+Then add the deployment ID from the normal Pickaxe embed snippet:
 
 ```text
-Customer ID
-Issuer
-Audience
-Key ID
-ES256 private key PEM
-Embed service origin
-Embed script URL
-Auth provider label
-Token TTL seconds
+Default deployment ID: deployment-...
 ```
 
-Recommended defaults:
+Generated defaults:
 
 ```text
+Issuer: WordPress home URL origin
 Audience: pickaxe-embed
+Key ID: wordpress-sso-key-...
+Embed service origin: https://embed.pickaxe.co
+Embed script URL: https://studio.pickaxe.co/api/embed/bundle.js
 Auth provider label: wordpress-native
 Token TTL seconds: 60
 ```
@@ -62,6 +61,7 @@ WordPress database:
 
 ```php
 define('PICKAXE_SSO_CUSTOMER_ID', '...');
+define('PICKAXE_SSO_DEFAULT_DEPLOYMENT_ID', 'deployment-your-id');
 define('PICKAXE_SSO_ISSUER', 'https://customer-site.example');
 define('PICKAXE_SSO_AUDIENCE', 'pickaxe-embed');
 define('PICKAXE_SSO_KEY_ID', '...');
@@ -80,7 +80,6 @@ The Pickaxe config must match the WordPress plugin settings exactly:
 
 ```text
 enabled: true
-customer_id: same value as PICKAXE_SSO_CUSTOMER_ID
 issuer: same value as PICKAXE_SSO_ISSUER
 audience: pickaxe-embed
 key_id: same value as PICKAXE_SSO_KEY_ID
@@ -92,7 +91,6 @@ Example:
 
 ```text
 enabled: true
-customer_id: acme-wordpress
 issuer: https://www.customer-site.com
 audience: pickaxe-embed
 key_id: acme-wordpress-key-2026-04
@@ -104,7 +102,7 @@ Important details:
 
 - The WordPress plugin stores the **private** key.
 - Pickaxe stores the matching **public** key.
-- `issuer`, `audience`, `customer_id`, and `key_id` must match exactly.
+- `issuer`, `audience`, and `key_id` must match exactly.
 - `allowed_origins` must include the browser origin where the embed page is loaded.
 - If the WordPress site uses both `https://example.com` and `https://www.example.com`, include the
   actual origin used by the embed page.
@@ -142,11 +140,16 @@ The JWT header is:
 Add this shortcode to the WordPress page where the embed should appear:
 
 ```text
+[pickaxe_embed]
+```
+
+The shortcode uses the default deployment ID from plugin settings. You can override it per page:
+
+```text
 [pickaxe_embed deployment_id="deployment-your-id"]
 ```
 
-Use the same `deployment-...` ID from the normal Pickaxe embed snippet. The production embed bundle
-scans for DOM nodes whose IDs start with `deployment-`, so the deployment ID is required.
+Use the same `deployment-...` ID from the normal Pickaxe embed snippet. The production embed bundle scans for DOM nodes whose IDs start with `deployment-`, so the deployment ID must be configured somewhere.
 
 When a visitor is logged in, the shortcode exposes a nonce-protected token callback to the embed.
 When a visitor is logged out, the plugin does not mint a token, and the embed should fall back to
@@ -210,7 +213,6 @@ Check:
 
 Check that Pickaxe SSO config matches the WordPress plugin:
 
-- `customer_id`
 - `issuer`
 - `audience`
 - `key_id`
