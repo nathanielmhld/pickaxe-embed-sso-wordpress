@@ -91,7 +91,8 @@ final class Pickaxe_Embed_SSO {
         $atts = is_array($atts) ? $atts : [];
         $atts = shortcode_atts(
             [
-                'target_id' => 'pickaxe-embed',
+                'deployment_id' => '',
+                'target_id' => '',
                 'script_url' => $settings['embed_script_url'],
                 'service_origin' => $settings['embed_service_origin'],
             ],
@@ -99,9 +100,13 @@ final class Pickaxe_Embed_SSO {
             'pickaxe_embed'
         );
 
-        $target_id = sanitize_html_class($atts['target_id']);
+        $target_id = sanitize_html_class($atts['deployment_id'] ?: $atts['target_id']);
         if (!$target_id) {
-            $target_id = 'pickaxe-embed';
+            if (current_user_can('manage_options')) {
+                return '<div class="pickaxe-embed-sso-error">Pickaxe Embed SSO is missing a deployment ID. Use <code>[pickaxe_embed deployment_id="deployment-your-id"]</code>.</div>';
+            }
+
+            return '';
         }
 
         $config = [
@@ -229,7 +234,7 @@ final class Pickaxe_Embed_SSO {
         submit_button();
         echo '</form>';
         echo '<h2>Usage</h2>';
-        echo '<p>Add <code>[pickaxe_embed]</code> to a page. Logged-out visitors will see the normal embed login path. Logged-in visitors receive a short-lived signed SSO token.</p>';
+        echo '<p>Add <code>[pickaxe_embed deployment_id="deployment-your-id"]</code> to a page. The deployment ID must be the same <code>deployment-...</code> ID used by the Pickaxe embed. Logged-out visitors will see the normal embed login path. Logged-in visitors receive a short-lived signed SSO token.</p>';
         echo '</div>';
     }
 

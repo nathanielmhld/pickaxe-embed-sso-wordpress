@@ -49,11 +49,12 @@ define('PICKAXE_SSO_TOKEN_TTL_SECONDS', 60);
 Add this shortcode to a page:
 
 ```text
-[pickaxe_embed]
+[pickaxe_embed deployment_id="deployment-your-id"]
 ```
 
-The shortcode loads the configured embed script and, for logged-in WordPress users, provides a
-nonce-authenticated JWT callback. Logged-out visitors do not receive an SSO token.
+Use the same `deployment-...` ID from the normal Pickaxe embed snippet. The shortcode loads the
+configured embed script and, for logged-in WordPress users, provides a nonce-authenticated JWT
+callback. Logged-out visitors do not receive an SSO token.
 
 ## Token Endpoint
 

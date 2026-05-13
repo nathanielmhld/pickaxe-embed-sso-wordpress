@@ -142,8 +142,11 @@ The JWT header is:
 Add this shortcode to the WordPress page where the embed should appear:
 
 ```text
-[pickaxe_embed]
+[pickaxe_embed deployment_id="deployment-your-id"]
 ```
+
+Use the same `deployment-...` ID from the normal Pickaxe embed snippet. The production embed bundle
+scans for DOM nodes whose IDs start with `deployment-`, so the deployment ID is required.
 
 When a visitor is logged in, the shortcode exposes a nonce-protected token callback to the embed.
 When a visitor is logged out, the plugin does not mint a token, and the embed should fall back to

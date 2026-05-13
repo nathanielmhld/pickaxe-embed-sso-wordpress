@@ -33,10 +33,9 @@
   }
 
   function mountEmbed() {
-    if (!window.PickaxeEmbed || typeof window.PickaxeEmbed.mount !== 'function') {
-      renderMessage('Pickaxe embed loader did not expose PickaxeEmbed.mount.');
-      return;
-    }
+    // The production Pickaxe bundle auto-mounts by scanning for deployment-* IDs.
+    // The local mock exposes PickaxeEmbed.mount, so keep this as a compatibility path.
+    if (!window.PickaxeEmbed || typeof window.PickaxeEmbed.mount !== 'function') return;
 
     const mountConfig = {
       target: config.target,
