@@ -110,3 +110,7 @@ The response shape is:
 - configured values supply `customer_id`, `iss`, `aud`, and `kid`
 
 The JWT is signed as ES256 using the configured private key.
+
+## License
+
+MIT
