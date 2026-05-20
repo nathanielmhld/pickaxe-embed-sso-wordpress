@@ -10,8 +10,8 @@
     target.textContent = message;
   }
 
-  async function getJwt(config) {
-    const response = await fetch(config.tokenUrl, {
+  async function fetchJwtFromUrl(url, config) {
+    const response = await fetch(url, {
       credentials: 'same-origin',
       headers: {
         Accept: 'application/json',
@@ -23,8 +23,32 @@
       throw new Error(`Pickaxe SSO token request failed: ${response.status}`);
     }
 
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error('Pickaxe SSO token request did not return JSON.');
+    }
+
     const payload = await response.json();
+    if (!payload.token) {
+      throw new Error('Pickaxe SSO token response did not include a token.');
+    }
+
     return payload.token;
+  }
+
+  async function getJwt(config) {
+    const urls = [config.tokenUrl, config.fallbackTokenUrl].filter(Boolean);
+    let lastError;
+
+    for (const url of urls) {
+      try {
+        return await fetchJwtFromUrl(url, config);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error('Pickaxe SSO token URL is not configured.');
   }
 
   function installScriptSso(config) {

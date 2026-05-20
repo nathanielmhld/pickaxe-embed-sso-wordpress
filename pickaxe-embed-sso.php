@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pickaxe Embed SSO
  * Description: Signs short-lived Pickaxe embed SSO tokens for logged-in WordPress users.
- * Version: 0.3.0
+ * Version: 0.3.1
  * Author: Pickaxe
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -135,6 +135,7 @@ final class Pickaxe_Embed_SSO {
             'iframeSrc' => esc_url_raw($iframe_src),
             'iframeOrigin' => $iframe_origin,
             'tokenUrl' => rest_url(self::REST_NAMESPACE . self::REST_ROUTE),
+            'fallbackTokenUrl' => self::rest_route_fallback_url(),
             'nonce' => wp_create_nonce('wp_rest'),
             'loggedIn' => is_user_logged_in(),
         ];
@@ -481,6 +482,14 @@ final class Pickaxe_Embed_SSO {
         }
 
         return 'https://studio.pickaxe.co/_embed/' . rawurlencode($pickaxe_id) . '?d=' . rawurlencode($deployment_id);
+    }
+
+    private static function rest_route_fallback_url(): string {
+        return add_query_arg(
+            'rest_route',
+            '/' . self::REST_NAMESPACE . self::REST_ROUTE,
+            site_url('/index.php')
+        );
     }
 
     private static function url_origin(string $url): string {
