@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pickaxe Embed SSO
  * Description: Signs short-lived Pickaxe embed SSO tokens for logged-in WordPress users.
- * Version: 0.3.2
+ * Version: 0.4.0
  * Author: Pickaxe
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -23,12 +23,15 @@ final class Pickaxe_Embed_SSO {
     private const DEFAULT_AUTH_PROVIDER = 'wordpress-native';
     private const DEFAULT_TOKEN_TTL_SECONDS = 60;
     private const DEFAULT_EMBED_MODE = 'script';
+    private const DEFAULT_PICKAXE_CONNECT_URL = 'https://studio.pickaxe.co/user/connect/wordpress-sso';
 
     public static function init(): void {
         add_action('rest_api_init', [__CLASS__, 'register_rest_routes']);
         add_action('admin_menu', [__CLASS__, 'register_settings_page']);
         add_action('admin_init', [__CLASS__, 'register_settings']);
+        add_action('admin_init', [__CLASS__, 'handle_connect_return']);
         add_action('admin_post_pickaxe_embed_sso_generate_config', [__CLASS__, 'handle_generate_config']);
+        add_action('admin_post_pickaxe_embed_sso_connect', [__CLASS__, 'handle_connect_to_pickaxe']);
         add_shortcode('pickaxe_embed', [__CLASS__, 'render_embed_shortcode']);
     }
 
@@ -237,6 +240,95 @@ final class Pickaxe_Embed_SSO {
         exit;
     }
 
+    public static function handle_connect_to_pickaxe(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die('You do not have permission to manage Pickaxe Embed SSO.');
+        }
+
+        check_admin_referer('pickaxe_embed_sso_connect');
+
+        $settings = self::ensure_local_sso_config();
+        $public_key = self::get_public_key_from_private_key($settings['private_key_pem']);
+        if (!$public_key) {
+            wp_die('Pickaxe Embed SSO could not derive a public key from the configured private key.');
+        }
+
+        $state = wp_generate_uuid4();
+        set_transient('pickaxe_embed_sso_connect_' . $state, 'pending', 10 * MINUTE_IN_SECONDS);
+
+        $site_origin = self::site_origin();
+        $payload = [
+            'version' => 1,
+            'source' => 'wordpress',
+            'siteName' => get_bloginfo('name'),
+            'siteUrl' => home_url('/'),
+            'issuer' => $settings['issuer'],
+            'audience' => $settings['audience'],
+            'keyId' => $settings['key_id'],
+            'publicKey' => $public_key,
+            'allowedOrigins' => [$site_origin],
+            'returnUrl' => add_query_arg(
+                [
+                    'page' => 'pickaxe-embed-sso',
+                    'pickaxe_connect_return' => '1',
+                    'state' => $state,
+                ],
+                admin_url('options-general.php')
+            ),
+        ];
+
+        $connect_url = $settings['pickaxe_connect_url'] ?: self::DEFAULT_PICKAXE_CONNECT_URL;
+        $redirect_url = add_query_arg(
+            [
+                'payload' => self::base64url_encode(wp_json_encode($payload)),
+                'state' => $state,
+            ],
+            $connect_url
+        );
+
+        wp_redirect($redirect_url);
+        exit;
+    }
+
+    public static function handle_connect_return(): void {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        if (!isset($_GET['page'], $_GET['pickaxe_connect_return']) || 'pickaxe-embed-sso' !== $_GET['page']) {
+            return;
+        }
+
+        $state = isset($_GET['state']) ? sanitize_text_field((string) $_GET['state']) : '';
+        if (!$state || 'pending' !== get_transient('pickaxe_embed_sso_connect_' . $state)) {
+            add_settings_error(
+                self::OPTION_NAME,
+                'pickaxe_connect_invalid_state',
+                'Pickaxe connection return could not be verified. Try Connect to Pickaxe again.',
+                'error'
+            );
+            return;
+        }
+
+        delete_transient('pickaxe_embed_sso_connect_' . $state);
+        if (!isset($_GET['pickaxe_connected']) || '1' !== $_GET['pickaxe_connected']) {
+            add_settings_error(
+                self::OPTION_NAME,
+                'pickaxe_connect_cancelled',
+                'Pickaxe connection was cancelled before changing workspace SSO settings.',
+                'warning'
+            );
+            return;
+        }
+
+        add_settings_error(
+            self::OPTION_NAME,
+            'pickaxe_connect_success',
+            'Pickaxe workspace SSO settings were connected. Add or verify your shortcode on a page, then test while logged in as a WordPress user.',
+            'updated'
+        );
+    }
+
     public static function sanitize_settings(array $input): array {
         $output = [];
 
@@ -306,15 +398,20 @@ final class Pickaxe_Embed_SSO {
 
         echo '<div class="wrap">';
         echo '<h1>Pickaxe Embed SSO</h1>';
+        settings_errors(self::OPTION_NAME);
         self::render_setup_wizard();
+        echo '<details style="max-width: 1100px; margin-top: 24px;">';
+        echo '<summary style="cursor: pointer; font-weight: 600; font-size: 16px;">Advanced/manual configuration</summary>';
+        echo '<div style="margin-top: 16px;">';
+        echo '<p>Use these settings only if you need manual setup, custom constants, or troubleshooting details.</p>';
         echo '<form action="options.php" method="post">';
         settings_fields('pickaxe_embed_sso');
         do_settings_sections('pickaxe-embed-sso');
         submit_button();
         echo '</form>';
         self::render_pickaxe_config_summary();
-        echo '<h2>Usage</h2>';
-        echo '<p>Add <code>[pickaxe_embed]</code> to a page after setting a default deployment ID. Use <code>[pickaxe_embed deployment_id="deployment-your-id"]</code> for the script embed, or <code>[pickaxe_embed mode="iframe" iframe_src="https://studio.pickaxe.co/_embed/your-pickaxe-id?d=deployment-your-id"]</code> for the iframe embed.</p>';
+        echo '</div>';
+        echo '</details>';
         echo '</div>';
     }
 
@@ -324,13 +421,22 @@ final class Pickaxe_Embed_SSO {
         }
 
         echo '<div class="card" style="max-width: 900px;">';
-        echo '<h2>Fast setup</h2>';
-        echo '<p>Generate the WordPress-side SSO values automatically. This creates a local ES256 key pair, stores the private key in WordPress, and shows the public key to copy into Pickaxe.</p>';
+        echo '<h2>Connect WordPress to Pickaxe</h2>';
+        echo '<p>Use this to connect the current WordPress site to a Pickaxe workspace. WordPress will generate the signing key locally, send only the public setup details to Pickaxe, and return here when the workspace is connected.</p>';
+        echo '<form action="' . esc_url(admin_url('admin-post.php')) . '" method="post">';
+        echo '<input type="hidden" name="action" value="pickaxe_embed_sso_connect" />';
+        wp_nonce_field('pickaxe_embed_sso_connect');
+        submit_button('Connect to Pickaxe', 'primary', 'submit', false);
+        echo '</form>';
+        echo '<details style="margin-top: 18px;">';
+        echo '<summary style="cursor: pointer;">Manual setup instead</summary>';
+        echo '<p>Generate local SSO values without opening Pickaxe. This is mainly for custom installations or support.</p>';
         echo '<form action="' . esc_url(admin_url('admin-post.php')) . '" method="post">';
         echo '<input type="hidden" name="action" value="pickaxe_embed_sso_generate_config" />';
         wp_nonce_field('pickaxe_embed_sso_generate_config');
         submit_button('Generate WordPress SSO Config', 'secondary', 'submit', false);
         echo '</form>';
+        echo '</details>';
         echo '</div>';
     }
 
@@ -446,7 +552,53 @@ final class Pickaxe_Embed_SSO {
                 'default' => (string) self::DEFAULT_TOKEN_TTL_SECONDS,
                 'description' => 'Allowed range: 10 to 300 seconds.',
             ],
+            'pickaxe_connect_url' => [
+                'label' => 'Pickaxe connect URL',
+                'type' => 'text',
+                'constant' => 'PICKAXE_SSO_CONNECT_URL',
+                'default' => self::DEFAULT_PICKAXE_CONNECT_URL,
+                'description' => 'Advanced. The Pickaxe page that accepts WordPress SSO setup payloads.',
+            ],
         ];
+    }
+
+    private static function ensure_local_sso_config(): array {
+        $settings = self::get_settings();
+        $site_origin = self::site_origin();
+        $site_host = (string) wp_parse_url($site_origin, PHP_URL_HOST);
+        $changed = false;
+
+        if (!$settings['private_key_pem'] || !$settings['key_id']) {
+            $key_pair = self::generate_es256_key_pair();
+            $settings['private_key_pem'] = $key_pair['privateKey'];
+            $settings['key_id'] = 'wordpress-sso-key-' . substr(str_replace('-', '', wp_generate_uuid4()), 0, 16);
+            $changed = true;
+        }
+
+        $defaults = [
+            'customer_id' => sanitize_title($site_host ?: get_bloginfo('name')),
+            'issuer' => $site_origin,
+            'audience' => self::DEFAULT_AUDIENCE,
+            'embed_service_origin' => 'https://embed.pickaxe.co',
+            'embed_script_url' => 'https://studio.pickaxe.co/api/embed/bundle.js',
+            'embed_mode' => self::DEFAULT_EMBED_MODE,
+            'auth_provider' => self::DEFAULT_AUTH_PROVIDER,
+            'token_ttl_seconds' => (string) self::DEFAULT_TOKEN_TTL_SECONDS,
+            'pickaxe_connect_url' => self::DEFAULT_PICKAXE_CONNECT_URL,
+        ];
+
+        foreach ($defaults as $key => $value) {
+            if (empty($settings[$key])) {
+                $settings[$key] = $value;
+                $changed = true;
+            }
+        }
+
+        if ($changed) {
+            update_option(self::OPTION_NAME, $settings);
+        }
+
+        return $settings;
     }
 
     private static function get_settings(): array {
