@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pickaxe Embed SSO
  * Description: Signs short-lived Pickaxe embed SSO tokens for logged-in WordPress users.
- * Version: 0.3.1
+ * Version: 0.3.2
  * Author: Pickaxe
  * Requires at least: 6.0
  * Requires PHP: 7.4
