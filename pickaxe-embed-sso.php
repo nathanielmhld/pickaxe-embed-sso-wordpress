@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pickaxe Embed SSO
  * Description: Signs short-lived Pickaxe embed SSO tokens for logged-in WordPress users.
- * Version: 0.2.0
+ * Version: 0.3.2
  * Author: Pickaxe
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -22,6 +22,7 @@ final class Pickaxe_Embed_SSO {
     private const DEFAULT_AUDIENCE = 'pickaxe-embed';
     private const DEFAULT_AUTH_PROVIDER = 'wordpress-native';
     private const DEFAULT_TOKEN_TTL_SECONDS = 60;
+    private const DEFAULT_EMBED_MODE = 'script';
 
     public static function init(): void {
         add_action('rest_api_init', [__CLASS__, 'register_rest_routes']);
@@ -94,6 +95,9 @@ final class Pickaxe_Embed_SSO {
             [
                 'deployment_id' => '',
                 'target_id' => '',
+                'mode' => $settings['embed_mode'],
+                'iframe_src' => $settings['iframe_src'],
+                'height' => '700',
                 'script_url' => $settings['embed_script_url'],
                 'service_origin' => $settings['embed_service_origin'],
             ],
@@ -110,17 +114,42 @@ final class Pickaxe_Embed_SSO {
             return '';
         }
 
+        $mode = 'iframe' === $atts['mode'] ? 'iframe' : 'script';
+        $iframe_src = self::build_iframe_src($atts['iframe_src'], $target_id, $settings['default_pickaxe_id']);
+        $iframe_origin = self::url_origin($iframe_src);
+
+        if ('iframe' === $mode && !$iframe_src) {
+            if (current_user_can('manage_options')) {
+                return '<div class="pickaxe-embed-sso-error">Pickaxe Embed SSO iframe mode needs an iframe source. Add one in Settings -> Pickaxe Embed SSO, or use <code>[pickaxe_embed mode="iframe" iframe_src="https://studio.pickaxe.co/_embed/your-pickaxe-id?d=' . esc_html($target_id) . '"]</code>.</div>';
+            }
+
+            return '';
+        }
+
         $config = [
+            'mode' => $mode,
+            'deploymentId' => $target_id,
             'target' => '#' . $target_id,
             'scriptUrl' => esc_url_raw($atts['script_url']),
             'serviceOrigin' => esc_url_raw($atts['service_origin']),
+            'iframeSrc' => esc_url_raw($iframe_src),
+            'iframeOrigin' => $iframe_origin,
             'tokenUrl' => rest_url(self::REST_NAMESPACE . self::REST_ROUTE),
+            'fallbackTokenUrl' => self::rest_route_fallback_url(),
             'nonce' => wp_create_nonce('wp_rest'),
             'loggedIn' => is_user_logged_in(),
         ];
 
-        $html = '<div id="' . esc_attr($target_id) . '" class="pickaxe-embed-sso"></div>';
-        $html .= '<script>window.PickaxeEmbedSSOConfig = ' . wp_json_encode($config) . ';</script>';
+        if ('iframe' === $mode) {
+            $height = max(300, min(2000, (int) $atts['height']));
+            $html = '<div id="' . esc_attr($target_id) . '" class="pickaxe-embed-sso pickaxe-embed-sso--iframe">';
+            $html .= '<iframe title="Pickaxe embed" src="' . esc_url($iframe_src) . '" width="100%" height="' . esc_attr((string) $height) . '" style="border:0;width:100%;min-height:' . esc_attr((string) $height) . 'px;" loading="lazy" allow="clipboard-write; microphone; camera"></iframe>';
+            $html .= '</div>';
+        } else {
+            $html = '<div id="' . esc_attr($target_id) . '" class="pickaxe-embed-sso"></div>';
+        }
+
+        $html .= '<script>window.PickaxeEmbedSSOConfigs = window.PickaxeEmbedSSOConfigs || []; window.PickaxeEmbedSSOConfigs.push(' . wp_json_encode($config) . '); window.PickaxeEmbedSSOConfig = ' . wp_json_encode($config) . ';</script>';
         $html .= '<script src="' . esc_url(plugin_dir_url(__FILE__) . 'assets/pickaxe-embed-sso.js') . '" defer></script>';
 
         return $html;
@@ -190,6 +219,7 @@ final class Pickaxe_Embed_SSO {
         $settings['private_key_pem'] = $key_pair['privateKey'];
         $settings['embed_service_origin'] = $settings['embed_service_origin'] ?: 'https://embed.pickaxe.co';
         $settings['embed_script_url'] = $settings['embed_script_url'] ?: 'https://studio.pickaxe.co/api/embed/bundle.js';
+        $settings['embed_mode'] = $settings['embed_mode'] ?: self::DEFAULT_EMBED_MODE;
         $settings['auth_provider'] = $settings['auth_provider'] ?: self::DEFAULT_AUTH_PROVIDER;
         $settings['token_ttl_seconds'] = (string) ($settings['token_ttl_seconds'] ?: self::DEFAULT_TOKEN_TTL_SECONDS);
 
@@ -215,6 +245,11 @@ final class Pickaxe_Embed_SSO {
 
             if ('textarea' === $field['type']) {
                 $output[$key] = trim($value);
+                continue;
+            }
+
+            if ('embed_mode' === $key) {
+                $output[$key] = 'iframe' === $value ? 'iframe' : 'script';
                 continue;
             }
 
@@ -247,6 +282,12 @@ final class Pickaxe_Embed_SSO {
             echo '<textarea class="large-text code" rows="8" name="' . esc_attr($name) . '" ' . disabled($constant_defined, true, false) . '>';
             echo esc_textarea($value);
             echo '</textarea>';
+        } elseif ('select' === $field['type']) {
+            echo '<select name="' . esc_attr($name) . '" ' . disabled($constant_defined, true, false) . '>';
+            foreach (($field['options'] ?? []) as $option_value => $option_label) {
+                echo '<option value="' . esc_attr($option_value) . '" ' . selected($value, $option_value, false) . '>' . esc_html($option_label) . '</option>';
+            }
+            echo '</select>';
         } else {
             echo '<input class="regular-text" type="' . esc_attr($field['type']) . '" name="' . esc_attr($name) . '" value="' . esc_attr($value) . '" ' . disabled($constant_defined, true, false) . ' />';
         }
@@ -273,7 +314,7 @@ final class Pickaxe_Embed_SSO {
         echo '</form>';
         self::render_pickaxe_config_summary();
         echo '<h2>Usage</h2>';
-        echo '<p>Add <code>[pickaxe_embed]</code> to a page after setting a default deployment ID. You can also override per page with <code>[pickaxe_embed deployment_id="deployment-your-id"]</code>.</p>';
+        echo '<p>Add <code>[pickaxe_embed]</code> to a page after setting a default deployment ID. Use <code>[pickaxe_embed deployment_id="deployment-your-id"]</code> for the script embed, or <code>[pickaxe_embed mode="iframe" iframe_src="https://studio.pickaxe.co/_embed/your-pickaxe-id?d=deployment-your-id"]</code> for the iframe embed.</p>';
         echo '</div>';
     }
 
@@ -315,6 +356,7 @@ final class Pickaxe_Embed_SSO {
             . "\n"
             . "shortcode:\n"
             . "[pickaxe_embed deployment_id=\"{$deployment_id}\"]\n"
+            . "[pickaxe_embed mode=\"iframe\" iframe_src=\"https://studio.pickaxe.co/_embed/your-pickaxe-id?d={$deployment_id}\"]\n"
         );
         echo '</textarea>';
     }
@@ -332,6 +374,12 @@ final class Pickaxe_Embed_SSO {
                 'type' => 'text',
                 'constant' => 'PICKAXE_SSO_DEFAULT_DEPLOYMENT_ID',
                 'description' => 'Example: deployment-abc123. Lets pages use [pickaxe_embed] without shortcode attributes.',
+            ],
+            'default_pickaxe_id' => [
+                'label' => 'Default Pickaxe ID',
+                'type' => 'text',
+                'constant' => 'PICKAXE_SSO_DEFAULT_PICKAXE_ID',
+                'description' => 'Optional. Used to build an iframe URL when iframe mode is selected without an iframe source.',
             ],
             'issuer' => [
                 'label' => 'Issuer',
@@ -368,6 +416,23 @@ final class Pickaxe_Embed_SSO {
                 'constant' => 'PICKAXE_SSO_EMBED_SCRIPT_URL',
                 'description' => 'The Pickaxe embed loader URL.',
             ],
+            'embed_mode' => [
+                'label' => 'Default embed mode',
+                'type' => 'select',
+                'constant' => 'PICKAXE_SSO_EMBED_MODE',
+                'default' => self::DEFAULT_EMBED_MODE,
+                'options' => [
+                    'script' => 'Script embed',
+                    'iframe' => 'Iframe embed',
+                ],
+                'description' => 'Script mode uses the current PickaxeConfig contract. Iframe mode uses postMessage to hand off the signed login token.',
+            ],
+            'iframe_src' => [
+                'label' => 'Default iframe source',
+                'type' => 'text',
+                'constant' => 'PICKAXE_SSO_IFRAME_SRC',
+                'description' => 'Optional. Example: https://studio.pickaxe.co/_embed/your-pickaxe-id?d=deployment-abc123',
+            ],
             'auth_provider' => [
                 'label' => 'Auth provider label',
                 'type' => 'text',
@@ -403,6 +468,44 @@ final class Pickaxe_Embed_SSO {
         $settings['token_ttl_seconds'] = max(10, min(300, (int) $settings['token_ttl_seconds']));
 
         return $settings;
+    }
+
+    private static function build_iframe_src(string $iframe_src, string $deployment_id, string $pickaxe_id): string {
+        $iframe_src = trim($iframe_src);
+        if ($iframe_src) {
+            return $iframe_src;
+        }
+
+        $pickaxe_id = trim($pickaxe_id);
+        if (!$pickaxe_id || !$deployment_id) {
+            return '';
+        }
+
+        return 'https://studio.pickaxe.co/_embed/' . rawurlencode($pickaxe_id) . '?d=' . rawurlencode($deployment_id);
+    }
+
+    private static function rest_route_fallback_url(): string {
+        return add_query_arg(
+            'rest_route',
+            '/' . self::REST_NAMESPACE . self::REST_ROUTE,
+            site_url('/index.php')
+        );
+    }
+
+    private static function url_origin(string $url): string {
+        if (!$url) {
+            return '';
+        }
+
+        $scheme = (string) wp_parse_url($url, PHP_URL_SCHEME);
+        $host = (string) wp_parse_url($url, PHP_URL_HOST);
+        $port = wp_parse_url($url, PHP_URL_PORT);
+
+        if (!$scheme || !$host) {
+            return '';
+        }
+
+        return $scheme . '://' . $host . ($port ? ':' . $port : '');
     }
 
     private static function missing_required_settings(array $settings): array {

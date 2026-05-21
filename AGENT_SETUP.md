@@ -16,7 +16,7 @@ JWT using the customer's registered SSO config and creates an embed session.
 Download the plugin zip from the GitHub release:
 
 ```text
-https://github.com/nathanielmhld/pickaxe-embed-sso-wordpress/releases/tag/v0.1.0
+https://github.com/pickaxeproject/pickaxe-embed-sso-wordpress/releases
 ```
 
 Use:
@@ -68,6 +68,9 @@ define('PICKAXE_SSO_KEY_ID', '...');
 define('PICKAXE_SSO_PRIVATE_KEY_PEM', "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----");
 define('PICKAXE_SSO_EMBED_SERVICE_ORIGIN', '...');
 define('PICKAXE_SSO_EMBED_SCRIPT_URL', '...');
+define('PICKAXE_SSO_EMBED_MODE', 'script');
+define('PICKAXE_SSO_DEFAULT_PICKAXE_ID', '...');
+define('PICKAXE_SSO_IFRAME_SRC', 'https://studio.pickaxe.co/_embed/your-pickaxe-id?d=deployment-your-id');
 define('PICKAXE_SSO_AUTH_PROVIDER', 'wordpress-native');
 define('PICKAXE_SSO_TOKEN_TTL_SECONDS', 60);
 ```
@@ -155,6 +158,17 @@ When a visitor is logged in, the shortcode exposes a nonce-protected token callb
 When a visitor is logged out, the plugin does not mint a token, and the embed should fall back to
 the normal unauthenticated/login behavior.
 
+For a raw iframe embed, use:
+
+```text
+[pickaxe_embed mode="iframe" iframe_src="https://studio.pickaxe.co/_embed/your-pickaxe-id?d=deployment-your-id"]
+```
+
+Iframe mode uses the same JWT contract. The difference is transport: the iframe sends a
+`pickaxe:sso:request` message to the parent page, the WordPress plugin replies with the signed JWT,
+and the iframe exchanges it with Pickaxe for an embed session token. Do not put the JWT in the iframe
+URL.
+
 ## Test Plan
 
 1. Open the WordPress page while logged out.
@@ -239,6 +253,12 @@ email = WordPress user email
 ```
 
 Pickaxe-side user matching policy determines whether that creates, links, or rejects the user.
+
+For iframe mode, also confirm:
+
+- the iframe source origin is the actual Pickaxe iframe origin, usually `https://studio.pickaxe.co`
+- the WordPress origin is present in Pickaxe `allowed_origins`
+- the iframe code supports the `pickaxe:sso:request` / `pickaxe:sso:response` bridge
 
 ## Security Notes
 

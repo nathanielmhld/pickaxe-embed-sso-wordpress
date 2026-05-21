@@ -29,6 +29,8 @@ That fills most fields automatically:
 Then set:
 
 - Default deployment ID, for example `deployment-your-id`
+- Default embed mode, either script embed or iframe embed
+- For iframe mode, either a default iframe source or a default Pickaxe ID
 
 For production, prefer defining secrets in `wp-config.php` so the private key is not stored in the
 database:
@@ -42,6 +44,9 @@ define('PICKAXE_SSO_KEY_ID', 'acme-key-2026-04');
 define('PICKAXE_SSO_PRIVATE_KEY_PEM', "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----");
 define('PICKAXE_SSO_EMBED_SERVICE_ORIGIN', 'https://embed.pickaxe.co');
 define('PICKAXE_SSO_EMBED_SCRIPT_URL', 'https://embed.pickaxe.co/embed-loader.js');
+define('PICKAXE_SSO_EMBED_MODE', 'script');
+define('PICKAXE_SSO_DEFAULT_PICKAXE_ID', 'your-pickaxe-id');
+define('PICKAXE_SSO_IFRAME_SRC', 'https://studio.pickaxe.co/_embed/your-pickaxe-id?d=deployment-your-id');
 ```
 
 Optional constants:
@@ -66,6 +71,14 @@ The shortcode uses the default deployment ID from settings. You can still overri
 ```
 
 Use the same `deployment-...` ID from the normal Pickaxe embed snippet. The shortcode loads the configured embed script and, for logged-in WordPress users, provides a nonce-authenticated JWT callback. Logged-out visitors do not receive an SSO token.
+
+For raw iframe embeds, use:
+
+```text
+[pickaxe_embed mode="iframe" iframe_src="https://studio.pickaxe.co/_embed/your-pickaxe-id?d=deployment-your-id"]
+```
+
+Iframe mode renders the iframe and listens for a `pickaxe:sso:request` message from the iframe. The plugin responds with a short-lived JWT only to the iframe origin configured by the iframe source. The iframe then exchanges that JWT with Pickaxe using the same SSO contract as the script embed.
 
 ## Token Endpoint
 
@@ -97,3 +110,7 @@ The response shape is:
 - configured values supply `customer_id`, `iss`, `aud`, and `kid`
 
 The JWT is signed as ES256 using the configured private key.
+
+## License
+
+MIT
