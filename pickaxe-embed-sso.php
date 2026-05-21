@@ -396,20 +396,10 @@ final class Pickaxe_Embed_SSO {
             return;
         }
 
-        $settings = self::get_settings();
-        $deployment_id = $settings['default_deployment_id'] ?: 'deployment-your-id';
-        $iframe_src = $settings['iframe_src'];
-
         echo '<div class="wrap">';
         echo '<h1>Pickaxe Embed SSO</h1>';
         settings_errors(self::OPTION_NAME);
         self::render_setup_wizard();
-        echo '<h2>Use on a page</h2>';
-        echo '<p>Add <code>[pickaxe_embed]</code> to a page after connecting this site to Pickaxe.</p>';
-        echo '<p>For a specific iframe embed, use:</p>';
-        echo '<textarea class="large-text code" rows="3" readonly>';
-        echo esc_textarea('[pickaxe_embed mode="iframe" iframe_src="' . ($iframe_src ?: 'https://studio.pickaxe.co/_embed/your-pickaxe-id?d=' . $deployment_id) . '"]');
-        echo '</textarea>';
         echo '<details style="max-width: 1100px; margin-top: 24px;">';
         echo '<summary style="cursor: pointer; font-weight: 600; font-size: 16px;">Advanced/manual configuration</summary>';
         echo '<div style="margin-top: 16px;">';
