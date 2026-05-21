@@ -396,18 +396,32 @@ final class Pickaxe_Embed_SSO {
             return;
         }
 
+        $settings = self::get_settings();
+        $deployment_id = $settings['default_deployment_id'] ?: 'deployment-your-id';
+        $iframe_src = $settings['iframe_src'];
+
         echo '<div class="wrap">';
         echo '<h1>Pickaxe Embed SSO</h1>';
         settings_errors(self::OPTION_NAME);
         self::render_setup_wizard();
+        echo '<h2>Use on a page</h2>';
+        echo '<p>Add <code>[pickaxe_embed]</code> to a page after connecting this site to Pickaxe.</p>';
+        echo '<p>For a specific iframe embed, use:</p>';
+        echo '<textarea class="large-text code" rows="3" readonly>';
+        echo esc_textarea('[pickaxe_embed mode="iframe" iframe_src="' . ($iframe_src ?: 'https://studio.pickaxe.co/_embed/your-pickaxe-id?d=' . $deployment_id) . '"]');
+        echo '</textarea>';
+        echo '<details style="max-width: 1100px; margin-top: 24px;">';
+        echo '<summary style="cursor: pointer; font-weight: 600; font-size: 16px;">Advanced/manual configuration</summary>';
+        echo '<div style="margin-top: 16px;">';
+        echo '<p>Use these settings only if you need manual setup, custom constants, or troubleshooting details.</p>';
         echo '<form action="options.php" method="post">';
         settings_fields('pickaxe_embed_sso');
         do_settings_sections('pickaxe-embed-sso');
         submit_button();
         echo '</form>';
         self::render_pickaxe_config_summary();
-        echo '<h2>Usage</h2>';
-        echo '<p>Add <code>[pickaxe_embed]</code> to a page after setting a default deployment ID. Use <code>[pickaxe_embed deployment_id="deployment-your-id"]</code> for the script embed, or <code>[pickaxe_embed mode="iframe" iframe_src="https://studio.pickaxe.co/_embed/your-pickaxe-id?d=deployment-your-id"]</code> for the iframe embed.</p>';
+        echo '</div>';
+        echo '</details>';
         echo '</div>';
     }
 
@@ -417,20 +431,22 @@ final class Pickaxe_Embed_SSO {
         }
 
         echo '<div class="card" style="max-width: 900px;">';
-        echo '<h2>Fast setup</h2>';
-        echo '<p>Generate the WordPress-side SSO values automatically. This creates a local ES256 key pair, stores the private key in WordPress, and shows the public key to copy into Pickaxe.</p>';
-        echo '<form action="' . esc_url(admin_url('admin-post.php')) . '" method="post">';
-        echo '<input type="hidden" name="action" value="pickaxe_embed_sso_generate_config" />';
-        wp_nonce_field('pickaxe_embed_sso_generate_config');
-        submit_button('Generate WordPress SSO Config', 'secondary', 'submit', false);
-        echo '</form>';
-        echo '<hr />';
-        echo '<p>Or connect this WordPress site to a Pickaxe workspace without manually copying the public key.</p>';
+        echo '<h2>Connect WordPress to Pickaxe</h2>';
+        echo '<p>Use this to connect the current WordPress site to a Pickaxe workspace. WordPress will generate the signing key locally, send only the public setup details to Pickaxe, and return here when the workspace is connected.</p>';
         echo '<form action="' . esc_url(admin_url('admin-post.php')) . '" method="post">';
         echo '<input type="hidden" name="action" value="pickaxe_embed_sso_connect" />';
         wp_nonce_field('pickaxe_embed_sso_connect');
         submit_button('Connect to Pickaxe', 'primary', 'submit', false);
         echo '</form>';
+        echo '<details style="margin-top: 18px;">';
+        echo '<summary style="cursor: pointer;">Manual setup instead</summary>';
+        echo '<p>Generate local SSO values without opening Pickaxe. This is mainly for custom installations or support.</p>';
+        echo '<form action="' . esc_url(admin_url('admin-post.php')) . '" method="post">';
+        echo '<input type="hidden" name="action" value="pickaxe_embed_sso_generate_config" />';
+        wp_nonce_field('pickaxe_embed_sso_generate_config');
+        submit_button('Generate WordPress SSO Config', 'secondary', 'submit', false);
+        echo '</form>';
+        echo '</details>';
         echo '</div>';
     }
 
