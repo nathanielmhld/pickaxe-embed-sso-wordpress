@@ -16,7 +16,7 @@ JWT using the customer's registered SSO config and creates an embed session.
 Download the plugin zip from the GitHub release:
 
 ```text
-https://github.com/nathanielmhld/pickaxe-embed-sso-wordpress/releases
+https://github.com/pickaxeproject/pickaxe-embed-sso-wordpress/releases
 ```
 
 Use:
