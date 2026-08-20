@@ -98,6 +98,17 @@
       if (!event.source || data.type !== 'pickaxe:sso:request') return;
       if (data.deploymentId && data.deploymentId !== config.deploymentId) return;
 
+      // Only answer the iframe this config rendered. Embed origins are
+      // multi-tenant, so any other window on that origin (another embed,
+      // a popup it opened) would otherwise pass the origin check and
+      // receive this user's JWT. Resolve the iframe at message time so
+      // the check survives the iframe being reloaded or replaced.
+      const container = document.querySelector(config.target);
+      const expectedWindow = container && container.querySelector('iframe')
+        ? container.querySelector('iframe').contentWindow
+        : null;
+      if (expectedWindow && event.source !== expectedWindow) return;
+
       try {
         const jwt = await getJwt(config);
         event.source.postMessage(
