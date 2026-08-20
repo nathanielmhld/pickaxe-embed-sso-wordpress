@@ -111,6 +111,19 @@ The response shape is:
 
 The JWT is signed as ES256 using the configured private key.
 
+### Adding custom claims
+
+The `pickaxe_embed_sso_token_payload` filter runs on the payload before signing, so a site can attach its own identity claims (for example a membership tier):
+
+```php
+add_filter('pickaxe_embed_sso_token_payload', function (array $payload, WP_User $user) {
+    $payload['membership_tier'] = get_user_meta($user->ID, 'membership_tier', true);
+    return $payload;
+}, 10, 2);
+```
+
+Claims added here are signed into the token. Unknown claims are ignored by the embed service unless it is configured to read them.
+
 ## License
 
 MIT
