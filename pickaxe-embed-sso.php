@@ -152,8 +152,13 @@ final class Pickaxe_Embed_SSO {
             $html = '<div id="' . esc_attr($target_id) . '" class="pickaxe-embed-sso"></div>';
         }
 
-        $html .= '<script>window.PickaxeEmbedSSOConfigs = window.PickaxeEmbedSSOConfigs || []; window.PickaxeEmbedSSOConfigs.push(' . wp_json_encode($config) . '); window.PickaxeEmbedSSOConfig = ' . wp_json_encode($config) . ';</script>';
-        $html .= '<script src="' . esc_url(plugin_dir_url(__FILE__) . 'assets/pickaxe-embed-sso.js') . '" defer></script>';
+        // data-cfasync opts out of Cloudflare Rocket Loader, and the no-optimize
+        // attributes opt out of the common WordPress minify/combine plugins.
+        // Optimizers that rewrite or relocate these tags can run the bridge
+        // after the iframe has already posted its SSO request, and the token
+        // handoff then fails silently.
+        $html .= '<script data-cfasync="false" data-no-optimize="1" data-no-defer="1">window.PickaxeEmbedSSOConfigs = window.PickaxeEmbedSSOConfigs || []; window.PickaxeEmbedSSOConfigs.push(' . wp_json_encode($config) . '); window.PickaxeEmbedSSOConfig = ' . wp_json_encode($config) . ';</script>';
+        $html .= '<script data-cfasync="false" data-no-optimize="1" data-no-defer="1" src="' . esc_url(plugin_dir_url(__FILE__) . 'assets/pickaxe-embed-sso.js') . '" defer></script>';
 
         return $html;
     }
