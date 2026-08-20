@@ -689,6 +689,20 @@ final class Pickaxe_Embed_SSO {
             'iat' => $now,
             'exp' => $now + (int) $settings['token_ttl_seconds'],
         ];
+
+        /**
+         * Filters the SSO token payload before it is signed.
+         *
+         * Claims added or changed here are signed into the JWT that the
+         * embed presents to the Pickaxe service, so sites can attach
+         * their own identity claims (for example a membership tier).
+         *
+         * @param array   $payload  The JWT claims about to be signed.
+         * @param WP_User $user     The logged-in WordPress user.
+         * @param array   $settings The resolved plugin settings.
+         */
+        $payload = apply_filters('pickaxe_embed_sso_token_payload', $payload, $user, $settings);
+
         $header = [
             'alg' => 'ES256',
             'kid' => $settings['key_id'],
